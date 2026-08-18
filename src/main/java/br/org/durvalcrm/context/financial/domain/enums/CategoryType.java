@@ -2,6 +2,6 @@
 package br.org.durvalcrm.context.financial.domain.enums;
 
 public enum CategoryType {
-    INCOME,
-    EXPENSE
+    RECEITA,
+    DESPESA
 }
