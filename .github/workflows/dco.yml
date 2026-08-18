@@ -1,0 +1,24 @@
+name: DCO Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify DCO Sign-off
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Check Commits
+        run: |
+          COMMITS=$(git log origin/${{ github.base_ref }}..HEAD --no-merges --format="%H")
+          for COMMIT in $COMMITS; do
+            if ! git log -1 --format="%B" $COMMIT | grep -q "Signed-off-by:"; then
+              echo "Commit $COMMIT does not have a Signed-off-by line."
+              exit 1
+            fi
+          done
