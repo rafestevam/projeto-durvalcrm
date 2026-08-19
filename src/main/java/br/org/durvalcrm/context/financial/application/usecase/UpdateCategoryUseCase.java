@@ -8,7 +8,8 @@ import java.util.Objects;
 import br.org.durvalcrm.context.financial.application.dto.CategoryResponse;
 import br.org.durvalcrm.context.financial.application.dto.UpdateCategoryCommand;
 import br.org.durvalcrm.context.financial.domain.entity.FinancialCategory;
-import br.org.durvalcrm.context.financial.domain.exception.DomainValidationException;
+import br.org.durvalcrm.context.financial.domain.exception.CategoryAlreadyExistsError;
+import br.org.durvalcrm.context.financial.domain.exception.CategoryNotFoundError;
 import br.org.durvalcrm.context.financial.domain.port.CategoryRepositoryPort;
 
 public class UpdateCategoryUseCase {
@@ -27,7 +28,7 @@ public class UpdateCategoryUseCase {
 
         // Busca a categoria existente
         FinancialCategory category = categoryRepository.findById(command.id())
-            .orElseThrow(() -> new DomainValidationException(
+            .orElseThrow(() -> new CategoryNotFoundError(
                 String.format("Categoria com ID '%s' não encontrada.", command.id())
             ));
         
@@ -35,7 +36,7 @@ public class UpdateCategoryUseCase {
         categoryRepository.findByNameAndType(command.newName(), category.getType())
             .filter(FinancialCategory::isActive)
             .ifPresent(existing -> {
-                throw new DomainValidationException(
+                throw new CategoryAlreadyExistsError(
                     String.format(
                         "Já existe uma categoria ativa com o nome '%s' e tipo '%s'.",
                         command.newName(),

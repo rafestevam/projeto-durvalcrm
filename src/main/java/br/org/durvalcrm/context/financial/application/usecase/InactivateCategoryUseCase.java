@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import br.org.durvalcrm.context.financial.application.dto.CategoryResponse;
 import br.org.durvalcrm.context.financial.domain.entity.FinancialCategory;
+import br.org.durvalcrm.context.financial.domain.exception.CategoryNotFoundError;
 import br.org.durvalcrm.context.financial.domain.exception.DomainValidationException;
 import br.org.durvalcrm.context.financial.domain.port.CategoryRepositoryPort;
 
@@ -27,7 +28,7 @@ public class InactivateCategoryUseCase {
 
         // Busca a categoria existente
         FinancialCategory category = categoryRepository.findById(categoryId)
-            .orElseThrow(() -> new DomainValidationException(
+            .orElseThrow(() -> new CategoryNotFoundError(
                 String.format("Categoria com ID '%s' não encontrada.", categoryId)
             ));
 

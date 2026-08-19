@@ -3,20 +3,19 @@
 
 package br.org.durvalcrm.context.financial.application.usecase;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import br.org.durvalcrm.context.financial.application.dto.CategoryFilter;
 import br.org.durvalcrm.context.financial.application.dto.CategoryResponse;
@@ -24,61 +23,15 @@ import br.org.durvalcrm.context.financial.domain.entity.FinancialCategory;
 import br.org.durvalcrm.context.financial.domain.enums.CategoryType;
 import br.org.durvalcrm.context.financial.domain.port.CategoryRepositoryPort;
 
+@ExtendWith(MockitoExtension.class)
 @DisplayName("ListCategoriesUseCase - Testes unitários da camada de aplicação")
 class ListCategoriesUseCaseTest {
 
-    // -------------------------------------------------------------------------
-    // Fake in-memory repository
-    // -------------------------------------------------------------------------
-    static class FakeCategoryRepository implements CategoryRepositoryPort {
+    @Mock
+    private CategoryRepositoryPort repository;
 
-        final List<FinancialCategory> store = new ArrayList<>();
-
-        @Override
-        public void save(FinancialCategory category) {
-            store.removeIf(c -> c.getId().equals(category.getId()));
-            store.add(category);
-        }
-
-        @Override
-        public Optional<FinancialCategory> findById(UUID id) {
-            return store.stream().filter(c -> c.getId().equals(id)).findFirst();
-        }
-
-        @Override
-        public Optional<FinancialCategory> findByNameAndType(String name, CategoryType type) {
-            return store.stream()
-                    .filter(c -> c.getName().equalsIgnoreCase(name) && c.getType() == type)
-                    .findFirst();
-        }
-
-        @Override
-        public List<FinancialCategory> findAll(CategoryType type) {
-            if (type == null) return List.copyOf(store);
-            return store.stream().filter(c -> c.getType() == type).toList();
-        }
-
-        @Override
-        public boolean hasLinkedTransactions(UUID categoryId) {
-            return false;
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Test setup
-    // -------------------------------------------------------------------------
-    private FakeCategoryRepository repository;
+    @InjectMocks
     private ListCategoriesUseCase useCase;
-
-    @BeforeEach
-    void setUp() {
-        repository = new FakeCategoryRepository();
-        useCase = new ListCategoriesUseCase(repository);
-    }
-
-    // -------------------------------------------------------------------------
-    // Tests
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("1. Construção do use case")
@@ -104,6 +57,8 @@ class ListCategoriesUseCaseTest {
         @Timeout(30)
         @DisplayName("Deve retornar lista vazia quando não há categorias cadastradas")
         void shouldReturnEmptyListWhenNoCategories() {
+            when(repository.findAll(null)).thenReturn(List.of());
+
             List<CategoryResponse> result = useCase.execute(CategoryFilter.all());
             assertTrue(result.isEmpty());
         }
@@ -115,8 +70,8 @@ class ListCategoriesUseCaseTest {
             FinancialCategory ativa = FinancialCategory.create("Doações PIX", CategoryType.RECEITA);
             FinancialCategory inativa = FinancialCategory.create("Conta de Luz", CategoryType.DESPESA);
             inativa.inactivate();
-            repository.save(ativa);
-            repository.save(inativa);
+
+            when(repository.findAll(null)).thenReturn(List.of(ativa, inativa));
 
             List<CategoryResponse> result = useCase.execute(CategoryFilter.all());
 
@@ -130,8 +85,8 @@ class ListCategoriesUseCaseTest {
             FinancialCategory ativa = FinancialCategory.create("Doações PIX", CategoryType.RECEITA);
             FinancialCategory inativa = FinancialCategory.create("Conta de Luz", CategoryType.DESPESA);
             inativa.inactivate();
-            repository.save(ativa);
-            repository.save(inativa);
+
+            when(repository.findAll(null)).thenReturn(List.of(ativa, inativa));
 
             List<CategoryResponse> result = useCase.execute(CategoryFilter.activeOnly());
 
@@ -149,9 +104,10 @@ class ListCategoriesUseCaseTest {
         @Timeout(30)
         @DisplayName("Deve retornar apenas categorias do tipo RECEITA")
         void shouldReturnOnlyReceitaCategories() {
-            repository.save(FinancialCategory.create("Doações PIX", CategoryType.RECEITA));
-            repository.save(FinancialCategory.create("Aluguel", CategoryType.DESPESA));
-            repository.save(FinancialCategory.create("Venda de Livros", CategoryType.RECEITA));
+            FinancialCategory active1 = FinancialCategory.create("Doações PIX", CategoryType.RECEITA);
+            FinancialCategory active2 = FinancialCategory.create("Venda de Livros", CategoryType.RECEITA);
+
+            when(repository.findAll(CategoryType.RECEITA)).thenReturn(List.of(active1, active2));
 
             List<CategoryResponse> result = useCase.execute(CategoryFilter.byType(CategoryType.RECEITA));
 
@@ -163,9 +119,10 @@ class ListCategoriesUseCaseTest {
         @Timeout(30)
         @DisplayName("Deve retornar apenas categorias do tipo DESPESA")
         void shouldReturnOnlyDespesaCategories() {
-            repository.save(FinancialCategory.create("Doações PIX", CategoryType.RECEITA));
-            repository.save(FinancialCategory.create("Conta de Luz", CategoryType.DESPESA));
-            repository.save(FinancialCategory.create("Conta de Água", CategoryType.DESPESA));
+            FinancialCategory active1 = FinancialCategory.create("Conta de Luz", CategoryType.DESPESA);
+            FinancialCategory active2 = FinancialCategory.create("Conta de Água", CategoryType.DESPESA);
+
+            when(repository.findAll(CategoryType.DESPESA)).thenReturn(List.of(active1, active2));
 
             List<CategoryResponse> result = useCase.execute(CategoryFilter.byType(CategoryType.DESPESA));
 
@@ -177,7 +134,7 @@ class ListCategoriesUseCaseTest {
         @Timeout(30)
         @DisplayName("Deve retornar lista vazia quando não existem categorias do tipo filtrado")
         void shouldReturnEmptyWhenNoMatchingType() {
-            repository.save(FinancialCategory.create("Doações PIX", CategoryType.RECEITA));
+            when(repository.findAll(CategoryType.DESPESA)).thenReturn(List.of());
 
             List<CategoryResponse> result = useCase.execute(CategoryFilter.byType(CategoryType.DESPESA));
 
@@ -194,7 +151,7 @@ class ListCategoriesUseCaseTest {
         @DisplayName("Deve mapear corretamente todos os campos da entidade para CategoryResponse")
         void shouldMapAllFieldsCorrectly() {
             FinancialCategory category = FinancialCategory.create("Cantina", CategoryType.RECEITA);
-            repository.save(category);
+            when(repository.findAll(null)).thenReturn(List.of(category));
 
             List<CategoryResponse> result = useCase.execute(CategoryFilter.all());
 

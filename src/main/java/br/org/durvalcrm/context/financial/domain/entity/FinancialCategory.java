@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 import br.org.durvalcrm.context.financial.domain.enums.CategoryType;
-import br.org.durvalcrm.context.financial.domain.exception.DomainValidationException;
+import br.org.durvalcrm.context.financial.domain.exception.InvalidCategoryDataError;
 
 public class FinancialCategory {
     
@@ -90,7 +90,7 @@ public class FinancialCategory {
 
     private void validateAndSetName(String name){
         if (name == null || name.trim().isEmpty()) {
-            throw new DomainValidationException("O nome da categoria não pode ser vazio.");
+            throw new InvalidCategoryDataError("O nome da categoria não pode ser vazio.");
         }
         this.name = name.trim();
     }

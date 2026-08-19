@@ -8,7 +8,7 @@ import java.util.Objects;
 import br.org.durvalcrm.context.financial.application.dto.CategoryResponse;
 import br.org.durvalcrm.context.financial.application.dto.CreateCategoryCommand;
 import br.org.durvalcrm.context.financial.domain.entity.FinancialCategory;
-import br.org.durvalcrm.context.financial.domain.exception.DomainValidationException;
+import br.org.durvalcrm.context.financial.domain.exception.CategoryAlreadyExistsError;
 import br.org.durvalcrm.context.financial.domain.port.CategoryRepositoryPort;
 
 public class CreateCategoryUseCase {
@@ -29,7 +29,7 @@ public class CreateCategoryUseCase {
         categoryRepository.findByNameAndType(command.name(), command.type())
             .filter(FinancialCategory::isActive)
             .ifPresent(existing -> {
-                throw new DomainValidationException(
+                throw new CategoryAlreadyExistsError(
                     String.format(
                         "Já existe uma categoria ativa com o nome '%s'e tipo '%s'.",
                         command.name(),

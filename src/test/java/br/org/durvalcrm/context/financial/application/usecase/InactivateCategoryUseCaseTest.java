@@ -3,84 +3,37 @@
 
 package br.org.durvalcrm.context.financial.application.usecase;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import br.org.durvalcrm.context.financial.application.dto.CategoryResponse;
 import br.org.durvalcrm.context.financial.domain.entity.FinancialCategory;
 import br.org.durvalcrm.context.financial.domain.enums.CategoryType;
+import br.org.durvalcrm.context.financial.domain.exception.CategoryNotFoundError;
 import br.org.durvalcrm.context.financial.domain.exception.DomainValidationException;
 import br.org.durvalcrm.context.financial.domain.port.CategoryRepositoryPort;
 
+@ExtendWith(MockitoExtension.class)
 @DisplayName("InactivateCategoryUseCase - Testes unitários da camada de aplicação")
 class InactivateCategoryUseCaseTest {
 
-    // -------------------------------------------------------------------------
-    // Fake in-memory repository with configurable transaction flag
-    // -------------------------------------------------------------------------
-    static class FakeCategoryRepository implements CategoryRepositoryPort {
+    @Mock
+    private CategoryRepositoryPort repository;
 
-        final List<FinancialCategory> store = new ArrayList<>();
-        boolean simulateLinkedTransactions = false;
-
-        @Override
-        public void save(FinancialCategory category) {
-            store.removeIf(c -> c.getId().equals(category.getId()));
-            store.add(category);
-        }
-
-        @Override
-        public Optional<FinancialCategory> findById(UUID id) {
-            return store.stream().filter(c -> c.getId().equals(id)).findFirst();
-        }
-
-        @Override
-        public Optional<FinancialCategory> findByNameAndType(String name, CategoryType type) {
-            return store.stream()
-                    .filter(c -> c.getName().equalsIgnoreCase(name) && c.getType() == type)
-                    .findFirst();
-        }
-
-        @Override
-        public List<FinancialCategory> findAll(CategoryType type) {
-            if (type == null) return List.copyOf(store);
-            return store.stream().filter(c -> c.getType() == type).toList();
-        }
-
-        @Override
-        public boolean hasLinkedTransactions(UUID categoryId) {
-            return simulateLinkedTransactions;
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Test setup
-    // -------------------------------------------------------------------------
-    private FakeCategoryRepository repository;
+    @InjectMocks
     private InactivateCategoryUseCase useCase;
-
-    @BeforeEach
-    void setUp() {
-        repository = new FakeCategoryRepository();
-        useCase = new InactivateCategoryUseCase(repository);
-    }
-
-    // -------------------------------------------------------------------------
-    // Tests
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("1. Construção do use case")
@@ -107,7 +60,8 @@ class InactivateCategoryUseCaseTest {
         @DisplayName("Deve inativar uma categoria ativa sem transações vinculadas")
         void shouldInactivateActiveCategorySuccessfully() {
             FinancialCategory category = FinancialCategory.create("Doações PIX", CategoryType.RECEITA);
-            repository.save(category);
+            when(repository.findById(category.getId())).thenReturn(Optional.of(category));
+            when(repository.hasLinkedTransactions(category.getId())).thenReturn(false);
 
             CategoryResponse response = useCase.execute(category.getId());
 
@@ -115,6 +69,7 @@ class InactivateCategoryUseCaseTest {
             assertEquals(category.getId(), response.id());
             assertFalse(response.active());
             assertNotNull(response.deletedAt());
+            verify(repository, times(1)).save(category);
         }
 
         @Test
@@ -122,13 +77,14 @@ class InactivateCategoryUseCaseTest {
         @DisplayName("Deve persistir a categoria inativa no repositório após inativação")
         void shouldPersistInactivatedCategory() {
             FinancialCategory category = FinancialCategory.create("Cantina", CategoryType.RECEITA);
-            repository.save(category);
+            when(repository.findById(category.getId())).thenReturn(Optional.of(category));
+            when(repository.hasLinkedTransactions(category.getId())).thenReturn(false);
 
             useCase.execute(category.getId());
 
-            FinancialCategory persisted = repository.findById(category.getId()).orElseThrow();
-            assertFalse(persisted.isActive());
-            assertNotNull(persisted.getDeletedAt());
+            assertFalse(category.isActive());
+            assertNotNull(category.getDeletedAt());
+            verify(repository, times(1)).save(category);
         }
     }
 
@@ -142,7 +98,8 @@ class InactivateCategoryUseCaseTest {
         void shouldThrowWhenCategoryAlreadyInactive() {
             FinancialCategory category = FinancialCategory.create("Livraria", CategoryType.RECEITA);
             category.inactivate();
-            repository.save(category);
+
+            when(repository.findById(category.getId())).thenReturn(Optional.of(category));
 
             DomainValidationException ex = assertThrows(
                     DomainValidationException.class,
@@ -153,6 +110,7 @@ class InactivateCategoryUseCaseTest {
                     String.format("A categoria '%s' já está inativa.", category.getName()),
                     ex.getMessage()
             );
+            verify(repository, never()).save(any());
         }
 
         @Test
@@ -160,8 +118,9 @@ class InactivateCategoryUseCaseTest {
         @DisplayName("Deve lançar DomainValidationException quando a categoria possui transações vinculadas")
         void shouldThrowWhenCategoryHasLinkedTransactions() {
             FinancialCategory category = FinancialCategory.create("Conta de Luz", CategoryType.DESPESA);
-            repository.save(category);
-            repository.simulateLinkedTransactions = true;
+
+            when(repository.findById(category.getId())).thenReturn(Optional.of(category));
+            when(repository.hasLinkedTransactions(category.getId())).thenReturn(true);
 
             DomainValidationException ex = assertThrows(
                     DomainValidationException.class,
@@ -175,6 +134,7 @@ class InactivateCategoryUseCaseTest {
                     ),
                     ex.getMessage()
             );
+            verify(repository, never()).save(any());
         }
     }
 
@@ -184,12 +144,13 @@ class InactivateCategoryUseCaseTest {
 
         @Test
         @Timeout(30)
-        @DisplayName("Deve lançar DomainValidationException quando o ID não existir no repositório")
+        @DisplayName("Deve lançar CategoryNotFoundError quando o ID não existir no repositório")
         void shouldThrowWhenCategoryNotFound() {
             UUID unknownId = UUID.randomUUID();
+            when(repository.findById(unknownId)).thenReturn(Optional.empty());
 
-            DomainValidationException ex = assertThrows(
-                    DomainValidationException.class,
+            CategoryNotFoundError ex = assertThrows(
+                    CategoryNotFoundError.class,
                     () -> useCase.execute(unknownId)
             );
             assertNotNull(ex.getMessage());
@@ -197,6 +158,7 @@ class InactivateCategoryUseCaseTest {
                     String.format("Categoria com ID '%s' não encontrada.", unknownId),
                     ex.getMessage()
             );
+            verify(repository, never()).save(any());
         }
     }
 

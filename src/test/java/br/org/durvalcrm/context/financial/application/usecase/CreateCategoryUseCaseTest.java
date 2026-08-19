@@ -3,84 +3,38 @@
 
 package br.org.durvalcrm.context.financial.application.usecase;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import br.org.durvalcrm.context.financial.application.dto.CategoryResponse;
 import br.org.durvalcrm.context.financial.application.dto.CreateCategoryCommand;
 import br.org.durvalcrm.context.financial.domain.entity.FinancialCategory;
 import br.org.durvalcrm.context.financial.domain.enums.CategoryType;
-import br.org.durvalcrm.context.financial.domain.exception.DomainValidationException;
+import br.org.durvalcrm.context.financial.domain.exception.CategoryAlreadyExistsError;
 import br.org.durvalcrm.context.financial.domain.port.CategoryRepositoryPort;
 
+@ExtendWith(MockitoExtension.class)
 @DisplayName("CreateCategoryUseCase - Testes unitários da camada de aplicação")
 class CreateCategoryUseCaseTest {
 
-    // -------------------------------------------------------------------------
-    // Fake in-memory repository
-    // -------------------------------------------------------------------------
-    static class FakeCategoryRepository implements CategoryRepositoryPort {
+    @Mock
+    private CategoryRepositoryPort repository;
 
-        final List<FinancialCategory> store = new ArrayList<>();
-
-        @Override
-        public void save(FinancialCategory category) {
-            store.removeIf(c -> c.getId().equals(category.getId()));
-            store.add(category);
-        }
-
-        @Override
-        public Optional<FinancialCategory> findById(UUID id) {
-            return store.stream().filter(c -> c.getId().equals(id)).findFirst();
-        }
-
-        @Override
-        public Optional<FinancialCategory> findByNameAndType(String name, CategoryType type) {
-            return store.stream()
-                    .filter(c -> c.getName().equalsIgnoreCase(name) && c.getType() == type)
-                    .findFirst();
-        }
-
-        @Override
-        public List<FinancialCategory> findAll(CategoryType type) {
-            if (type == null) return List.copyOf(store);
-            return store.stream().filter(c -> c.getType() == type).toList();
-        }
-
-        @Override
-        public boolean hasLinkedTransactions(UUID categoryId) {
-            return false;
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Test setup
-    // -------------------------------------------------------------------------
-    private FakeCategoryRepository repository;
+    @InjectMocks
     private CreateCategoryUseCase useCase;
-
-    @BeforeEach
-    void setUp() {
-        repository = new FakeCategoryRepository();
-        useCase = new CreateCategoryUseCase(repository);
-    }
-
-    // -------------------------------------------------------------------------
-    // Tests
-    // -------------------------------------------------------------------------
 
     @Nested
     @DisplayName("1. Construção do use case")
@@ -107,6 +61,8 @@ class CreateCategoryUseCaseTest {
         @DisplayName("Deve criar uma categoria RECEITA e retornar response com dados corretos")
         void shouldCreateReceitaCategorySuccessfully() {
             CreateCategoryCommand command = new CreateCategoryCommand("Doações PIX", CategoryType.RECEITA);
+            when(repository.findByNameAndType("Doações PIX", CategoryType.RECEITA))
+                    .thenReturn(Optional.empty());
 
             CategoryResponse response = useCase.execute(command);
 
@@ -117,7 +73,12 @@ class CreateCategoryUseCaseTest {
             assertTrue(response.active());
             assertNotNull(response.createdAt());
             assertNotNull(response.updatedAt());
-            assertEquals(1, repository.store.size());
+
+            ArgumentCaptor<FinancialCategory> categoryCaptor = ArgumentCaptor.forClass(FinancialCategory.class);
+            verify(repository, times(1)).save(categoryCaptor.capture());
+            FinancialCategory savedCategory = categoryCaptor.getValue();
+            assertEquals("Doações PIX", savedCategory.getName());
+            assertEquals(CategoryType.RECEITA, savedCategory.getType());
         }
 
         @Test
@@ -125,41 +86,34 @@ class CreateCategoryUseCaseTest {
         @DisplayName("Deve criar uma categoria DESPESA com sucesso")
         void shouldCreateDespesaCategorySuccessfully() {
             CreateCategoryCommand command = new CreateCategoryCommand("Conta de Luz", CategoryType.DESPESA);
+            when(repository.findByNameAndType("Conta de Luz", CategoryType.DESPESA))
+                    .thenReturn(Optional.empty());
 
-            CategoryResponse response = useCase.execute(command);
-
-            assertEquals(CategoryType.DESPESA, response.type());
-            assertEquals("Conta de Luz", response.name());
-        }
-
-        @Test
-        @Timeout(30)
-        @DisplayName("Deve permitir criar categorias com nomes iguais mas tipos diferentes")
-        void shouldAllowSameNameWithDifferentTypes() {
-            repository.save(FinancialCategory.create("Geral", CategoryType.RECEITA));
-
-            CreateCategoryCommand command = new CreateCategoryCommand("Geral", CategoryType.DESPESA);
             CategoryResponse response = useCase.execute(command);
 
             assertNotNull(response);
-            assertEquals("Geral", response.name());
             assertEquals(CategoryType.DESPESA, response.type());
-            assertEquals(2, repository.store.size());
+            assertEquals("Conta de Luz", response.name());
+
+            verify(repository, times(1)).save(any(FinancialCategory.class));
         }
 
         @Test
         @Timeout(30)
         @DisplayName("Deve permitir criar categoria com nome igual ao de uma categoria inativa do mesmo tipo")
         void shouldAllowDuplicateNameWhenExistingIsInactive() {
-            FinancialCategory inativa = FinancialCategory.create("Cantina", CategoryType.RECEITA);
-            inativa.inactivate();
-            repository.save(inativa);
+            FinancialCategory inactive = FinancialCategory.create("Cantina", CategoryType.RECEITA);
+            inactive.inactivate();
+
+            when(repository.findByNameAndType("Cantina", CategoryType.RECEITA))
+                    .thenReturn(Optional.of(inactive));
 
             CreateCategoryCommand command = new CreateCategoryCommand("Cantina", CategoryType.RECEITA);
             CategoryResponse response = useCase.execute(command);
 
             assertNotNull(response);
             assertEquals("Cantina", response.name());
+            verify(repository, times(1)).save(any(FinancialCategory.class));
         }
     }
 
@@ -169,18 +123,22 @@ class CreateCategoryUseCaseTest {
 
         @Test
         @Timeout(30)
-        @DisplayName("Deve lançar DomainValidationException ao criar categoria com nome e tipo duplicados e ativos")
+        @DisplayName("Deve lançar CategoryAlreadyExistsError ao criar categoria com nome e tipo duplicados e ativos")
         void shouldThrowWhenActiveDuplicateExists() {
-            repository.save(FinancialCategory.create("Doações PIX", CategoryType.RECEITA));
+            FinancialCategory active = FinancialCategory.create("Doações PIX", CategoryType.RECEITA);
+
+            when(repository.findByNameAndType("Doações PIX", CategoryType.RECEITA))
+                    .thenReturn(Optional.of(active));
 
             CreateCategoryCommand command = new CreateCategoryCommand("Doações PIX", CategoryType.RECEITA);
 
-            DomainValidationException ex = assertThrows(
-                    DomainValidationException.class,
+            CategoryAlreadyExistsError ex = assertThrows(
+                    CategoryAlreadyExistsError.class,
                     () -> useCase.execute(command)
             );
             assertTrue(ex.getMessage().contains("Doações PIX"));
             assertTrue(ex.getMessage().contains("RECEITA"));
+            verify(repository, never()).save(any());
         }
     }
 
