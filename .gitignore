@@ -8,3 +8,6 @@ coverage/
 *.log
 .DS_Store
 target/
+devplan/
+
+AGENTS.md
